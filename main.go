@@ -5,7 +5,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"github.com/dradtke/gotk3/glib"
+	//"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
 	"io"
 	"net"
@@ -13,6 +13,7 @@ import (
 	"os/exec"
 	"os/user"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ type Application struct {
 	Mopidy *MopidyProc
 	Config *MopidyConfig
 	Gui *GUI
+	Errors chan error
+	Quit chan bool
 
 	// find a better place to put this?
 	OutputLock sync.Mutex
@@ -35,11 +38,24 @@ func Fatal(err error) {
 		os.Exit(1)
 	})
 	dialog.Show()
-	gtk.Main()
+	if gtk.MainLevel() == 0 {
+		gtk.Main()
+	}
+}
+
+func NonFatal(err error) {
+	dialog := gtk.MessageDialogNew(nil, 0, gtk.MESSAGE_ERROR, gtk.BUTTONS_CLOSE, err.Error())
+	dialog.Connect("response", func() {
+		dialog.Destroy()
+	})
+	dialog.Show()
 }
 
 func main() {
+	runtime.GOMAXPROCS(1)
 	app := new(Application)
+	app.Errors = make(chan error)
+	app.Quit = make(chan bool, 1)
 
 	gtk.Init(nil)
 	var mopidyCmdPath, userConfigPath string
@@ -53,7 +69,7 @@ func main() {
 	// find the user's configuration
 	usr, err := user.Current()
 	if err == nil {
-		userConfigPath = filepath.Join(usr.HomeDir, ".config", "gopidy", "mopidy.conf")
+		userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", "mopidy.conf")
 	} else {
 		// no user =/
 		Fatal(err)
@@ -80,14 +96,27 @@ func main() {
 	app.Gui.SetStatus("", "Connecting...")
 	app.ConnectAll()
 	app.Gui.MainWindow.ShowAll()
-	gtk.Main()
+	fmt.Println("entering main...")
+
+	running := true
+	for running {
+		gtk.MainIteration()
+		select {
+		case <-app.Quit:
+			running = false
+		case err := <-app.Errors:
+			NonFatal(err)
+		default:
+			// fall through
+		}
+	}
 }
 
 func Quit(app *Application) {
 	if app.Mopidy.Cmd.Process != nil {
 		app.Mopidy.Cmd.Process.Kill()
 	}
-	gtk.MainQuit()
+	app.Quit <- true
 }
 
 // InitMopidy takes the path to the mopidy executable and a loaded configuration
@@ -122,42 +151,45 @@ func InitMopidy(app *Application, cmd string) error {
 		}
 	}()
 
-	// watch for errors in an idle thread
-	glib.IdleAdd(func() bool {
-		select {
-		case err := <-app.Mopidy.Errs:
-			fmt.Fprintln(os.Stderr, err.Error())
-			app.Mopidy.Cmd.Process.Kill()
-			app.Mopidy.Status = MopidyFailed
-			app.Gui.SetStatus("", "Not connected.")
-			// TODO: change the application's state
-			Fatal(err)
-			return false
-		default:
-			return true
-		}
-	})
-
 	outCh := make(chan string)
 	app.Mopidy.Output = new(bytes.Buffer)
 	app.NewOutput = func(str string) {}
 
 	// watch mopidy's output for errors
-	glib.IdleAdd(func() bool {
-		select {
-		case str := <-outCh:
-			app.OutputLock.Lock()
-			app.Mopidy.Output.WriteString(str + "\n")
-			app.NewOutput(str + "\n")
-			app.OutputLock.Unlock()
-			if strings.HasPrefix(str, "ERROR") {
-				errCh <- errors.New(strings.TrimSpace(str[6:]))
+	go func() {
+		for {
+			select {
+			case str, ok := <-outCh:
+				if !ok {
+					return
+				}
+				app.OutputLock.Lock()
+				app.Mopidy.Output.WriteString(str + "\n")
+				app.NewOutput(str + "\n")
+				app.OutputLock.Unlock()
+				if strings.HasPrefix(str, "ERROR") {
+					errCh <- errors.New(strings.TrimSpace(str[6:]))
+				}
 			}
-		default:
-			// do nothing
 		}
-		return true
-	})
+	}()
+
+	// watch for errors in an idle thread
+	go func() {
+		for {
+			select {
+			case err, ok := <-app.Mopidy.Errs:
+				if !ok {
+					return
+				}
+				fmt.Fprintln(os.Stderr, err.Error())
+				app.Mopidy.Cmd.Process.Kill()
+				app.Mopidy.Status = MopidyFailed
+				app.Gui.SetStatus("", "Not connected.")
+				app.Errors <- err
+			}
+		}
+	}()
 
 	// attempt to start mopidy in a new goroutine
 	go StartMopidy(app, hostname, port, outCh, errCh)
@@ -219,6 +251,7 @@ func ReadOutput(app *Application, stream io.Reader, output chan string) {
 		output <- buffer.String()
 		buffer.Reset()
 	}
+	close(output)
 }
 
 // EchoStream takes a stream and a prefix and continuously prints lines
