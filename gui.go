@@ -1,9 +1,10 @@
 package main
 
 import (
-	"fmt"
 	"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
+
+	"fmt"
 	"os"
 	"reflect"
 )
@@ -17,7 +18,8 @@ type GUI struct {
 
 	MenuQuit    *gtk.ImageMenuItem `build:"menu-quit"`
 	MenuSources *gtk.MenuItem      `build:"menu-sources"`
-	MenuOutput  *gtk.MenuItem      `build:"menu-output"`
+	MenuOutput  *gtk.MenuItem      `build:"menu-server-output"`
+	MenuRestart *gtk.ImageMenuItem `build:"menu-server-restart"`
 
 	DialogSources struct {
 		Window *gtk.Dialog `build:"dialog-sources"`
@@ -268,5 +270,15 @@ func (app *Application) ConnectAll() {
 		}
 		app.OutputLock.Unlock()
 		app.Gui.OutputWindow.ShowAll()
+	})
+	app.Gui.MenuRestart.Connect("activate", func() {
+		app.Gui.SetStatus("", "Connecting...")
+		app.Mopidy.Output.Reset()
+		go func() {
+			err := app.StartMopidy()
+			if err != nil {
+				app.Errors <- err
+			}
+		}()
 	})
 }
