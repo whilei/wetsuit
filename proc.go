@@ -1,15 +1,12 @@
 package main
 
 import (
-	"github.com/dradtke/gotk3/gtk"
-
 	"bufio"
 	"bytes"
 	"errors"
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"os/exec"
 	"strings"
 	"sync"
@@ -30,7 +27,8 @@ type MopidyProc struct {
 	OutputLock sync.Mutex
 	NewOutput  func(string)
 
-	Quitting chan bool
+	Quitting       chan bool
+	StopConnecting chan bool
 }
 
 type MopidyStatus int
@@ -41,16 +39,16 @@ const (
 	MopidyFailed
 )
 
-// InitMopidy takes the path to the mopidy executable and a loaded configuration and verifies
+// InitMopidy() takes the path to the mopidy executable and a loaded configuration and verifies
 // that everything is good to go.
-func InitMopidy(app *Application, exec string) error {
+func (app *Application) InitMopidy(exec string) error {
 	var ok bool
 
 	app.Mopidy = new(MopidyProc)
 	app.Mopidy.Exec = exec
-	app.Mopidy.Status = MopidyConnecting
 	app.Mopidy.Errors = make(chan error)
 	app.Mopidy.Quitting = make(chan bool, 1)
+	app.Mopidy.StopConnecting = make(chan bool, 1)
 
 	// look up the hostname
 	app.Mopidy.Hostname, ok = app.Config.Get("mpd/hostname")
@@ -89,10 +87,10 @@ func InitMopidy(app *Application, exec string) error {
 				if !ok {
 					return
 				}
-				fmt.Fprintln(os.Stderr, err.Error())
+				//fmt.Fprintln(os.Stderr, err.Error())
+				app.Mopidy.StopConnecting <- true
 				app.Mopidy.Stop()
-				app.Mopidy.Status = MopidyFailed
-				app.Gui.SetStatus("", "Not connected.")
+				app.Disable()
 				app.Errors <- err
 			}
 		}
@@ -101,16 +99,36 @@ func InitMopidy(app *Application, exec string) error {
 	return nil
 }
 
-func (app *Application) StartMopidy() {
-	app.Gui.MenuStart.SetSensitive(false)
+// Disable() updates the application's state and gui when Mopidy isn't running.
+func (app *Application) Disable() {
+	app.Gui.MenuStart.SetSensitive(true)
+	app.Gui.MenuStop.SetSensitive(false)
+	app.Gui.MenuRestart.SetSensitive(false)
+	app.Gui.DisableAllTabs()
+	app.SetStatus(MopidyFailed)
+}
+
+// Enable() updates the application's state and gui when Mopidy is running
+// and connected to.
+func (app *Application) Enable() {
+	app.SetStatus(MopidyConnected)
 	app.Gui.MenuStop.SetSensitive(true)
 	app.Gui.MenuRestart.SetSensitive(true)
+}
+
+func (app *Application) StartMopidy() {
+	app.SetStatus(MopidyConnecting)
+
+	app.Gui.MenuStart.SetSensitive(false)
+	app.Gui.MenuStop.SetSensitive(false)
+	app.Gui.MenuRestart.SetSensitive(false)
+
 	err := app.Mopidy.Start(app.Config.Path)
 	if err == nil {
-		app.Gui.SetStatus(gtk.STOCK_CONNECT, "Connected to Mopidy.")
+		app.Enable()
 	} else {
-		app.Gui.SetStatus("", "Not connected.")
-		app.Errors <- err
+		app.Mopidy.Errors <- err
+		app.Disable()
 	}
 }
 
@@ -133,7 +151,6 @@ func (m *MopidyProc) ReadOutput(stream io.Reader) {
 		}
 
 		str := buffer.String()
-		fmt.Println(str)
 		m.OutputLock.Lock()
 		m.Output.WriteString(str + "\n")
 		m.NewOutput(str + "\n")
@@ -170,10 +187,7 @@ func EchoStream(stream io.Reader, prefix string) {
 }
 
 func (app *Application) StopMopidy() {
-	app.Gui.MenuStart.SetSensitive(true)
-	app.Gui.MenuStop.SetSensitive(false)
-	app.Gui.MenuRestart.SetSensitive(false)
-	app.Gui.SetStatus("", "Not connected.")
+	app.Disable()
 	err := app.Mopidy.Stop()
 	if err != nil {
 		app.Errors <- err
@@ -182,12 +196,14 @@ func (app *Application) StopMopidy() {
 
 func (app *Application) RestartMopidy() {
 	app.Mopidy.Output.Reset()
-	app.Gui.SetStatus("", "Connecting...")
 
 	if err := app.Mopidy.Stop(); err != nil {
+		app.Disable()
 		app.Errors <- err
 	}
+
 	if err := app.Mopidy.Start(app.Config.Path); err != nil {
+		app.Disable()
 		app.Errors <- err
 	}
 }
@@ -195,6 +211,7 @@ func (app *Application) RestartMopidy() {
 // Mopidy methods
 
 func (m *MopidyProc) Start(configPath string) error {
+	m.Output.Reset()
 	m.Cmd = exec.Command(m.Exec, "--config="+configPath)
 	stderr, err := m.Cmd.StderrPipe()
 	if err != nil {
@@ -212,19 +229,21 @@ func (m *MopidyProc) Start(configPath string) error {
 	// spin until 1) we get an error, 2) we connect successfully, or
 	// 3) we time out with too many attempts
 	for failedAttempts < maxAttempts {
-		time.Sleep(500 * time.Millisecond)
-		conn, err := net.Dial("tcp", m.Hostname+":"+m.Port)
-		if err == nil {
-			// connected
-			m.Conn = conn
-			m.Status = MopidyConnected
+		select {
+		case <-m.StopConnecting:
 			return nil
+		case <-time.After(500 * time.Millisecond):
+			conn, err := net.Dial("tcp", m.Hostname+":"+m.Port)
+			if err == nil {
+				// connected
+				m.Conn = conn
+				return nil
+			}
+			// TODO: check to see if this error means the port is taken
+			failedAttempts++
 		}
-		// TODO: check to see if this error means the port is taken
-		failedAttempts++
 	}
 
-	m.Status = MopidyFailed
 	return fmt.Errorf("failed to connect to mopidy after %d tries", maxAttempts)
 }
 
@@ -239,6 +258,5 @@ func (m *MopidyProc) Stop() error {
 
 	// wait for associated goroutines to finish
 	<-m.Quitting
-	m.Output.Reset()
 	return nil
 }

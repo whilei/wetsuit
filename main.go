@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/dradtke/gotk3/gtk"
+	"sync"
 
 	"errors"
 	"os"
@@ -22,6 +23,7 @@ type Application struct {
 	Work chan func() // channel of functions to be run in the main thread
 
 	Running bool
+	StatusLock sync.Mutex
 }
 
 // Program entry point.
@@ -64,18 +66,17 @@ func main() {
 		app.Fatal(err)
 	}
 
+	app.ConnectAll()
+	app.Gui.MainWindow.ShowAll()
+
 	go func() {
-		err = InitMopidy(app, mopidyCmdPath)
+		err := app.InitMopidy(mopidyCmdPath)
 		if err != nil {
 			app.Errors <- err
 		}
 		// attempt to start mopidy
 		app.StartMopidy()
 	}()
-
-	app.Gui.SetStatus("", "Connecting...")
-	app.ConnectAll()
-	app.Gui.MainWindow.ShowAll()
 
 	// custom iterator so that we can watch channels
 	for app.Running {
@@ -96,6 +97,7 @@ func main() {
 			case err := <-app.Errors:
 				app.ShowingError = true
 				app.NonFatal(err)
+				app.Disable()
 			default:
 				// fall through
 			}
@@ -135,6 +137,21 @@ func (app *Application) Do(f func()) {
 		done <- true
 	}
 	<-done
+}
+
+func (app *Application) SetStatus(status MopidyStatus) {
+	app.StatusLock.Lock()
+	defer app.StatusLock.Unlock()
+
+	app.Mopidy.Status = status
+	switch status {
+	case MopidyConnecting:
+		app.Gui.SetStatus("", "Connecting...")
+	case MopidyConnected:
+		app.Gui.SetStatus(gtk.STOCK_CONNECT, "Connected to Mopidy.")
+	case MopidyFailed:
+		app.Gui.SetStatus("", "Not connected.")
+	}
 }
 
 func Quit(app *Application) {

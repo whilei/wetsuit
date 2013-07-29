@@ -108,33 +108,9 @@ func (gui *GUI) RunDialog(name string, respond func(gtk.ResponseType) bool) (err
 	}
 }
 
-func (gui *GUI) SetStatus(icon gtk.Stock, msg string) error {
-	if gui.statusMessageArea == nil {
-		if area, err := gui.Status.GetMessageArea(); err != nil {
-			return err
-		} else {
-			gui.statusMessageArea = area
-		}
-
-		if icon, err := gtk.ImageNewFromStock(icon, gtk.ICON_SIZE_MENU); err != nil {
-			return err
-		} else {
-			gui.statusMessageIcon = icon
-		}
-
-		if label, err := gtk.LabelNew(msg); err != nil {
-			return err
-		} else {
-			gui.statusMessageText = label
-		}
-
-		gui.statusMessageArea.PackStart(gui.statusMessageIcon, false, false, 0)
-		gui.statusMessageArea.PackStart(gui.statusMessageText, false, false, 0)
-	} else {
-		gui.statusMessageIcon.SetFromStock(icon, gtk.ICON_SIZE_MENU)
-		gui.statusMessageText.SetText(msg)
-	}
-	return nil
+func (gui *GUI) SetStatus(icon gtk.Stock, msg string) {
+	gui.statusMessageIcon.SetFromStock(icon, gtk.ICON_SIZE_MENU)
+	gui.statusMessageText.SetText(msg)
 }
 
 // LoadWidgets() loads widgets into the struct by checking the "build" tag of each field.
@@ -193,6 +169,25 @@ func InitGUI(cfg *MopidyConfig) (gui *GUI, err error) {
 		return nil, err
 	}
 
+	// set up the status bar
+	area, err := gui.Status.GetMessageArea()
+	if err != nil {
+		return nil, err
+	}
+	gui.statusMessageArea = area
+	icon, err := gtk.ImageNewFromStock("", gtk.ICON_SIZE_MENU)
+	if err != nil {
+		return nil, err
+	}
+	gui.statusMessageIcon = icon
+	label, err := gtk.LabelNew("")
+	if err != nil {
+		return nil, err
+	}
+	gui.statusMessageText = label
+	gui.statusMessageArea.PackStart(gui.statusMessageIcon, false, false, 0)
+	gui.statusMessageArea.PackStart(gui.statusMessageText, false, false, 0)
+
 	// disable tabs
 	if enabled, ok, err := cfg.GetBool("local/enabled"); (!enabled && ok) || err != nil {
 		gui.DisableTab("local")
@@ -232,6 +227,28 @@ func (gui *GUI) DisableTab(name string) error {
 	return fmt.Errorf("tab '%s' not found", name)
 }
 
+func (gui *GUI) DisableAllTabs() error {
+	for i := 0; i < gui.Notebook.GetNPages(); i++ {
+		page, err := gui.Notebook.GetNthPage(i)
+		if err != nil {
+			return err
+		}
+
+		label, err := gui.Notebook.GetTabLabel(page)
+		if err != nil {
+			return err
+		}
+
+		gui.Notebook.RemovePage(i)
+		gui.disabledTabs = append(gui.disabledTabs, struct {
+			Label *gtk.Widget
+			Page  *gtk.Widget
+		}{label, page})
+	}
+
+	return nil
+}
+
 func (app *Application) ConnectAll() {
 	app.Gui.MainWindow.Connect("destroy", func() {
 		Quit(app)
@@ -257,32 +274,32 @@ func (app *Application) ConnectAll() {
 			fmt.Fprintln(os.Stderr, "failed to run dialog:", err.Error())
 		}
 	})
-	// ???: why this not work?
-	app.Gui.OutputWindow.HideOnDelete()
-	app.Gui.OutputWindow.Connect("delete-event", func() {
+	app.Gui.OutputWindow.Connect("delete-event", func() bool {
 		app.Mopidy.NewOutput = func(str string) {}
+		return app.Gui.OutputWindow.HideOnDelete()
 	})
 	app.Gui.MenuOutput.Connect("activate", func() {
-		/*
-		fmt.Printf("%v\n", app.Gui.Output)
 		app.Mopidy.OutputLock.Lock()
-		buffer, _ := app.Gui.Output.GetBuffer()
+		buffer, err := app.Gui.Output.GetBuffer()
+		if err != nil {
+			app.Errors <- err
+			return
+		}
 		buffer.SetText(app.Mopidy.Output.String())
 		iter := buffer.GetIterAtOffset(-1)
 		app.Mopidy.NewOutput = func(str string) {
 			buffer.Insert(iter, str)
 		}
 		app.Mopidy.OutputLock.Unlock()
-		*/
 		app.Gui.OutputWindow.ShowAll()
 	})
 	app.Gui.MenuStart.Connect("activate", func() {
-		app.StartMopidy()
+		go app.StartMopidy()
 	})
 	app.Gui.MenuStop.Connect("activate", func() {
-		app.StopMopidy()
+		go app.StopMopidy()
 	})
 	app.Gui.MenuRestart.Connect("activate", func() {
-		app.RestartMopidy()
+		go app.RestartMopidy()
 	})
 }
