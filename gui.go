@@ -19,6 +19,8 @@ type GUI struct {
 	MenuQuit    *gtk.ImageMenuItem `build:"menu-quit"`
 	MenuSources *gtk.MenuItem      `build:"menu-sources"`
 	MenuOutput  *gtk.MenuItem      `build:"menu-server-output"`
+	MenuStart   *gtk.ImageMenuItem `build:"menu-server-start"`
+	MenuStop    *gtk.ImageMenuItem `build:"menu-server-stop"`
 	MenuRestart *gtk.ImageMenuItem `build:"menu-server-restart"`
 
 	DialogSources struct {
@@ -180,7 +182,7 @@ func InitGUI(cfg *MopidyConfig) (gui *GUI, err error) {
 		return nil, err
 	}
 
-	if err := builder.AddFromFile("src/github.com/dradtke/gopidy/mopidy.ui"); err != nil {
+	if err := builder.AddFromFile("src/github.com/dradtke/wetsuit/wetsuit.ui"); err != nil {
 		return nil, err
 	}
 
@@ -195,7 +197,6 @@ func InitGUI(cfg *MopidyConfig) (gui *GUI, err error) {
 	if enabled, ok, err := cfg.GetBool("local/enabled"); (!enabled && ok) || err != nil {
 		gui.DisableTab("local")
 	}
-
 	if enabled, _, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
 		gui.DisableTab("spotify")
 	}
@@ -256,29 +257,32 @@ func (app *Application) ConnectAll() {
 			fmt.Fprintln(os.Stderr, "failed to run dialog:", err.Error())
 		}
 	})
-	app.Gui.OutputWindow.Connect("destroy", func() {
-		app.Gui.OutputWindow.Hide()
-		app.NewOutput = func(str string) {}
+	// ???: why this not work?
+	app.Gui.OutputWindow.HideOnDelete()
+	app.Gui.OutputWindow.Connect("delete-event", func() {
+		app.Mopidy.NewOutput = func(str string) {}
 	})
 	app.Gui.MenuOutput.Connect("activate", func() {
-		app.OutputLock.Lock()
+		/*
+		fmt.Printf("%v\n", app.Gui.Output)
+		app.Mopidy.OutputLock.Lock()
 		buffer, _ := app.Gui.Output.GetBuffer()
 		buffer.SetText(app.Mopidy.Output.String())
 		iter := buffer.GetIterAtOffset(-1)
-		app.NewOutput = func(str string) {
+		app.Mopidy.NewOutput = func(str string) {
 			buffer.Insert(iter, str)
 		}
-		app.OutputLock.Unlock()
+		app.Mopidy.OutputLock.Unlock()
+		*/
 		app.Gui.OutputWindow.ShowAll()
 	})
+	app.Gui.MenuStart.Connect("activate", func() {
+		app.StartMopidy()
+	})
+	app.Gui.MenuStop.Connect("activate", func() {
+		app.StopMopidy()
+	})
 	app.Gui.MenuRestart.Connect("activate", func() {
-		app.Gui.SetStatus("", "Connecting...")
-		app.Mopidy.Output.Reset()
-		go func() {
-			err := app.StartMopidy()
-			if err != nil {
-				app.Errors <- err
-			}
-		}()
+		app.RestartMopidy()
 	})
 }

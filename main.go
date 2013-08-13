@@ -9,7 +9,6 @@ import (
 	"os/user"
 	"path/filepath"
 	"runtime"
-	"sync"
 )
 
 type Application struct {
@@ -23,10 +22,6 @@ type Application struct {
 	Work chan func() // channel of functions to be run in the main thread
 
 	Running bool
-
-	// find a better place to put this?
-	OutputLock sync.Mutex
-	NewOutput  func(string)
 }
 
 // Program entry point.
@@ -75,10 +70,7 @@ func main() {
 			app.Errors <- err
 		}
 		// attempt to start mopidy
-		err := app.StartMopidy()
-		if err != nil {
-			app.Errors <- err
-		}
+		app.StartMopidy()
 	}()
 
 	app.Gui.SetStatus("", "Connecting...")

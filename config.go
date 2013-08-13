@@ -12,16 +12,16 @@ import (
 )
 
 type MopidyConfig struct {
-	data map[string] string
-	path string
+	Data map[string] string
+	Path string
 }
 
 // LoadConfig loads the application's mopidy configuration and, if none is found,
 // creates a new one using `mopidy --show-config`. The configuration is represented
 // as a key-value map, with keys being of the form "section/key" e.g. "spotify/username".
 func LoadConfig(mopidy, userConfigPath string) (*MopidyConfig, error) {
-	cfg := &MopidyConfig{path:userConfigPath}
-	cfg.data = make(map[string] string)
+	cfg := &MopidyConfig{Path:userConfigPath}
+	cfg.Data = make(map[string] string)
 	var body []byte
 
 	if _, err := os.Stat(userConfigPath); os.IsNotExist(err) {
@@ -72,13 +72,13 @@ func LoadConfig(mopidy, userConfigPath string) (*MopidyConfig, error) {
 			// we have a key, so save it
 			key = section + "/" + strings.TrimSpace(line[:i])
 			value := strings.TrimSpace(line[i+1:])
-			cfg.data[key] = value
+			cfg.Data[key] = value
 		} else {
 			// append it to the previous key
-			if cfg.data[key] == "" {
-				cfg.data[key] = line
+			if cfg.Data[key] == "" {
+				cfg.Data[key] = line
 			} else {
-				cfg.data[key] = cfg.data[key] + "," + line
+				cfg.Data[key] = cfg.Data[key] + "," + line
 			}
 		}
 	}
@@ -87,14 +87,14 @@ func LoadConfig(mopidy, userConfigPath string) (*MopidyConfig, error) {
 
 // Get gets the value of a configuration key. It's analogous to Go's native map access.
 func (cfg *MopidyConfig) Get(key string) (string, bool) {
-	val, found := cfg.data[key]
+	val, found := cfg.Data[key]
 	return val, found
 }
 
 // GetBool gets the value of a configuration key and converts it to a boolean. If the
 // key is found but fails to convert to a boolean, then this method returns an error.
 func (cfg *MopidyConfig) GetBool(key string) (bool, bool, error) {
-	val, found := cfg.data[key]
+	val, found := cfg.Data[key]
 	if !found {
 		return false, found, nil
 	}
@@ -104,19 +104,19 @@ func (cfg *MopidyConfig) GetBool(key string) (bool, bool, error) {
 
 // Set sets a value in the configuration.
 func (cfg *MopidyConfig) Set(key, value string) {
-	cfg.data[key] = value
+	cfg.Data[key] = value
 }
 
 // SetBool is the same as Set, but it takes a boolean instead.
 func (cfg *MopidyConfig) SetBool(key string, value bool) {
-	cfg.data[key] = strconv.FormatBool(value)
+	cfg.Data[key] = strconv.FormatBool(value)
 }
 
 // Save saves the configuration to the application's mopidy config file.
 func (cfg *MopidyConfig) Save() error {
 	sections := make(map[string] []string)
 
-	for key, value := range cfg.data {
+	for key, value := range cfg.Data {
 		if i := strings.Index(key, "/"); i != -1 {
 			section := key[:i]
 			line := key[i+1:] + "=" + value
@@ -138,7 +138,7 @@ func (cfg *MopidyConfig) Save() error {
 		buffer.WriteString("\n")
 	}
 
-	if err := ioutil.WriteFile(cfg.path, buffer.Bytes(), 0777); err != nil {
+	if err := ioutil.WriteFile(cfg.Path, buffer.Bytes(), 0777); err != nil {
 		return errors.New("failed to write to config file: " + err.Error())
 	}
 
