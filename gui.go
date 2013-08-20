@@ -3,6 +3,7 @@ package main
 import (
 	"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
+	"github.com/dradtke/wetsuit/config"
 
 	"fmt"
 	"os"
@@ -146,7 +147,7 @@ func LoadWidgets(structVal reflect.Value, builder *gtk.Builder) (err error) {
 	return nil
 }
 
-func InitGUI(cfg *MopidyConfig) (gui *GUI, err error) {
+func InitGUI(cfg *config.Properties) (gui *GUI, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
@@ -189,10 +190,11 @@ func InitGUI(cfg *MopidyConfig) (gui *GUI, err error) {
 	gui.statusMessageArea.PackStart(gui.statusMessageText, false, false, 0)
 
 	// disable tabs
-	if enabled, ok, err := cfg.GetBool("local/enabled"); (!enabled && ok) || err != nil {
+	// TODO: default this to enabled if the key isn't found
+	if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
 		gui.DisableTab("local")
 	}
-	if enabled, _, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
+	if enabled, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
 		gui.DisableTab("spotify")
 	}
 

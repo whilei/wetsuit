@@ -2,6 +2,7 @@ package main
 
 import (
 	"github.com/dradtke/gotk3/gtk"
+	"github.com/dradtke/wetsuit/config"
 	"sync"
 
 	"errors"
@@ -14,7 +15,7 @@ import (
 
 type Application struct {
 	Mopidy *MopidyProc
-	Config *MopidyConfig
+	Config *config.Properties
 	Gui    *GUI
 
 	Errors       chan error // channel of errors to be displayed
@@ -55,8 +56,9 @@ func main() {
 	}
 
 	// load configuration
-	app.Config, err = LoadConfig(mopidyCmdPath, userConfigPath)
-	if err != nil {
+	if p, err := config.Load(userConfigPath); err == nil {
+		app.Config = p
+	} else {
 		app.Fatal(err)
 	}
 

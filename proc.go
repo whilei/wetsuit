@@ -41,9 +41,7 @@ const (
 
 // InitMopidy() takes the path to the mopidy executable and a loaded configuration and verifies
 // that everything is good to go.
-func (app *Application) InitMopidy(exec string) error {
-	var ok bool
-
+func (app *Application) InitMopidy(exec string) (err error) {
 	app.Mopidy = new(MopidyProc)
 	app.Mopidy.Exec = exec
 	app.Mopidy.Errors = make(chan error)
@@ -51,9 +49,9 @@ func (app *Application) InitMopidy(exec string) error {
 	app.Mopidy.StopConnecting = make(chan bool, 1)
 
 	// look up the hostname
-	app.Mopidy.Hostname, ok = app.Config.Get("mpd/hostname")
-	if !ok {
-		return errors.New("mpd/hostname not found in config")
+	app.Mopidy.Hostname, err = app.Config.Get("mpd/hostname")
+	if err != nil {
+		return
 	} else {
 		// enclose any IP addresses with a colon in brackets
 		// this is important because IPv6 is supported, and mopidy's default is "::"
@@ -63,9 +61,9 @@ func (app *Application) InitMopidy(exec string) error {
 	}
 
 	// look up the port
-	app.Mopidy.Port, ok = app.Config.Get("mpd/port")
-	if !ok {
-		return errors.New("mpd/port not found in config")
+	app.Mopidy.Port, err = app.Config.Get("mpd/port")
+	if err != nil {
+		return
 	}
 
 	defer func() {
@@ -123,7 +121,7 @@ func (app *Application) StartMopidy() {
 	app.Gui.MenuStop.SetSensitive(false)
 	app.Gui.MenuRestart.SetSensitive(false)
 
-	err := app.Mopidy.Start(app.Config.Path)
+	err := app.Mopidy.Start(app.Config.Path())
 	if err == nil {
 		app.Enable()
 	} else {
@@ -202,7 +200,7 @@ func (app *Application) RestartMopidy() {
 		app.Errors <- err
 	}
 
-	if err := app.Mopidy.Start(app.Config.Path); err != nil {
+	if err := app.Mopidy.Start(app.Config.Path()); err != nil {
 		app.Disable()
 		app.Errors <- err
 	}
