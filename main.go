@@ -3,27 +3,27 @@ package main
 import (
 	"github.com/dradtke/gotk3/gtk"
 	"github.com/dradtke/wetsuit/config"
-	"sync"
-
-	"errors"
+	"github.com/dradtke/wetsuit/server"
+	"github.com/dradtke/wetsuit/server/mopidy"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 type Application struct {
-	Mopidy *MopidyProc
-	Config *config.Properties
-	Gui    *GUI
+	//Mopidy *MopidyProc
+	Server       *server.Instance
+	ServerConfig *config.Properties
+	Gui          *GUI
 
 	Errors       chan error // channel of errors to be displayed
 	ShowingError bool
 
 	Work chan func() // channel of functions to be run in the main thread
 
-	Running bool
+	Running    bool
 	StatusLock sync.Mutex
 }
 
@@ -31,25 +31,21 @@ type Application struct {
 func main() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	gtk.Init(nil)
 
 	app := new(Application)
 	app.Errors = make(chan error)
 	app.Work = make(chan func())
 	app.Running = true
 
-	gtk.Init(nil)
-	var mopidyCmdPath, userConfigPath string
+	srv := mopidy.New()
 
-	// make sure mopidy is installed
-	mopidyCmdPath, err := exec.LookPath("mopidy")
-	if err != nil {
-		app.Fatal(errors.New("Mopidy is not installed."))
-	}
+	var userConfigPath string
 
 	// find the user's configuration
 	usr, err := user.Current()
 	if err == nil {
-		userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", "mopidy.conf")
+		userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", srv.Name()+".conf")
 	} else {
 		// no user =/
 		app.Fatal(err)
@@ -57,13 +53,13 @@ func main() {
 
 	// load configuration
 	if p, err := config.Load(userConfigPath); err == nil {
-		app.Config = p
+		app.ServerConfig = p
 	} else {
 		app.Fatal(err)
 	}
 
 	// create the window
-	app.Gui, err = InitGUI(app.Config)
+	app.Gui, err = InitGUI(app.ServerConfig)
 	if err != nil {
 		app.Fatal(err)
 	}
@@ -71,13 +67,22 @@ func main() {
 	app.ConnectAll()
 	app.Gui.MainWindow.ShowAll()
 
+	// in a separate goroutine, attempt to start and connect to it
 	go func() {
-		err := app.InitMopidy(mopidyCmdPath)
+		err := srv.Start(userConfigPath)
 		if err != nil {
 			app.Errors <- err
 		}
-		// attempt to start mopidy
-		app.StartMopidy()
+		hostname, _ := app.ServerConfig.Get("mpd/hostname")
+		port, _ := app.ServerConfig.Get("mpd/port")
+		stop := make(chan bool, 1)
+		ok, err := srv.Connect(hostname, port, stop)
+		if err != nil {
+			app.Errors <- err
+		}
+		if !ok {
+			// how to react to this?
+		}
 	}()
 
 	// custom iterator so that we can watch channels
@@ -99,7 +104,6 @@ func main() {
 			case err := <-app.Errors:
 				app.ShowingError = true
 				app.NonFatal(err)
-				app.Disable()
 			default:
 				// fall through
 			}
@@ -141,25 +145,6 @@ func (app *Application) Do(f func()) {
 	<-done
 }
 
-func (app *Application) SetStatus(status MopidyStatus) {
-	app.StatusLock.Lock()
-	defer app.StatusLock.Unlock()
-
-	app.Mopidy.Status = status
-	switch status {
-	case MopidyConnecting:
-		app.Gui.SetStatus("", "Connecting...")
-	case MopidyConnected:
-		app.Gui.SetStatus(gtk.STOCK_CONNECT, "Connected to Mopidy.")
-	case MopidyFailed:
-		app.Gui.SetStatus("", "Not connected.")
-	}
-}
-
 func Quit(app *Application) {
-	if app.Mopidy.Cmd.Process != nil {
-		app.Mopidy.Cmd.Process.Kill()
-	}
 	app.Running = false
 }
-

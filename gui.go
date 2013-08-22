@@ -4,7 +4,6 @@ import (
 	"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
 	"github.com/dradtke/wetsuit/config"
-
 	"fmt"
 	"os"
 	"reflect"
@@ -25,10 +24,11 @@ type GUI struct {
 	MenuRestart *gtk.ImageMenuItem `build:"menu-server-restart"`
 
 	DialogSources struct {
-		Window *gtk.Dialog `build:"dialog-sources"`
-		Ok     *gtk.Button `build:"dialog-sources-ok"`
-		Apply  *gtk.Button `build:"dialog-sources-apply"`
-		Cancel *gtk.Button `build:"dialog-sources-cancel"`
+		Window      *gtk.Dialog            `build:"dialog-sources"`
+		Ok          *gtk.Button            `build:"dialog-sources-ok"`
+		Apply       *gtk.Button            `build:"dialog-sources-apply"`
+		Cancel      *gtk.Button            `build:"dialog-sources-cancel"`
+		MusicFolder *gtk.FileChooserButton `build:"dialog-sources-music-folder"`
 	} `build:"..."`
 
 	statusMessageArea *gtk.Box
@@ -189,6 +189,21 @@ func InitGUI(cfg *config.Properties) (gui *GUI, err error) {
 	gui.statusMessageArea.PackStart(gui.statusMessageIcon, false, false, 0)
 	gui.statusMessageArea.PackStart(gui.statusMessageText, false, false, 0)
 
+	// TODO: see if we can somehow set the music folder button to the existing music folder
+	mediaDir, err := cfg.Get("local/media_dir")
+	if err != nil {
+		if mediaDir == "$XDG_MUSIC_DIR" {
+			mediaDir = os.ExpandEnv(mediaDir)
+		}
+		if mediaDir != "" {
+			gui.DialogSources.MusicFolder.SetCurrentFolder(mediaDir)
+		} else {
+			cfg.SetBool("local/enabled", false)
+		}
+	} else {
+		cfg.SetBool("local/enabled", false)
+	}
+
 	// disable tabs
 	// TODO: default this to enabled if the key isn't found
 	if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
@@ -197,6 +212,8 @@ func InitGUI(cfg *config.Properties) (gui *GUI, err error) {
 	if enabled, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
 		gui.DisableTab("spotify")
 	}
+
+	// TODO: if everything is disabled, point users to the Sources... dialog
 
 	return gui, nil
 }
@@ -277,31 +294,26 @@ func (app *Application) ConnectAll() {
 		}
 	})
 	app.Gui.OutputWindow.Connect("delete-event", func() bool {
-		app.Mopidy.NewOutput = func(str string) {}
 		return app.Gui.OutputWindow.HideOnDelete()
 	})
 	app.Gui.MenuOutput.Connect("activate", func() {
-		app.Mopidy.OutputLock.Lock()
+		/*
 		buffer, err := app.Gui.Output.GetBuffer()
 		if err != nil {
 			app.Errors <- err
 			return
 		}
-		buffer.SetText(app.Mopidy.Output.String())
 		iter := buffer.GetIterAtOffset(-1)
-		app.Mopidy.NewOutput = func(str string) {
-			buffer.Insert(iter, str)
-		}
-		app.Mopidy.OutputLock.Unlock()
 		app.Gui.OutputWindow.ShowAll()
+		*/
 	})
 	app.Gui.MenuStart.Connect("activate", func() {
-		go app.StartMopidy()
+		// go app.StartMopidy()
 	})
 	app.Gui.MenuStop.Connect("activate", func() {
-		go app.StopMopidy()
+		// go app.StopMopidy()
 	})
 	app.Gui.MenuRestart.Connect("activate", func() {
-		go app.RestartMopidy()
+		// go app.RestartMopidy()
 	})
 }
