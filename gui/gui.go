@@ -5,6 +5,7 @@ import (
 	"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
 	"github.com/dradtke/wetsuit/config"
+	"os"
 	"reflect"
 )
 
@@ -26,10 +27,11 @@ type Gui struct {
 	} `build:"..."`
 
 	DialogSources struct {
-		Window *gtk.Dialog `build:"dialog-sources"`
-		Ok     *gtk.Button `build:"dialog-sources-ok"`
-		Apply  *gtk.Button `build:"dialog-sources-apply"`
-		Cancel *gtk.Button `build:"dialog-sources-cancel"`
+		Window      *gtk.Dialog            `build:"dialog-sources"`
+		Ok          *gtk.Button            `build:"dialog-sources-ok"`
+		Apply       *gtk.Button            `build:"dialog-sources-apply"`
+		Cancel      *gtk.Button            `build:"dialog-sources-cancel"`
+		MusicFolder *gtk.FileChooserButton `build:"dialog-sources-music-folder"`
 	} `build:"..."`
 
 	statusMessageArea *gtk.Box
@@ -210,6 +212,21 @@ func Init(cfg *config.Properties, callbacks map[string]map[string]Callback) (g *
 	g.statusMessageArea.PackStart(g.statusMessageIcon, false, false, 0)
 	g.statusMessageArea.PackStart(g.statusMessageText, false, false, 0)
 
+	// TODO: see if we can somehow set the music folder button to the existing music folder
+	mediaDir, err := cfg.Get("local/media_dir")
+	if err != nil {
+		if mediaDir == "$XDG_MUSIC_DIR" {
+			mediaDir = os.ExpandEnv(mediaDir)
+		}
+		if mediaDir != "" {
+			g.DialogSources.MusicFolder.SetCurrentFolder(mediaDir)
+		} else {
+			cfg.SetBool("local/enabled", false)
+		}
+	} else {
+		cfg.SetBool("local/enabled", false)
+	}
+
 	// disable tabs
 	// TODO: default this to enabled if the key isn't found
 	if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
@@ -219,6 +236,7 @@ func Init(cfg *config.Properties, callbacks map[string]map[string]Callback) (g *
 		g.DisableTab("spotify")
 	}
 
+	// TODO: if everything is disabled, point users to the Sources... dialog
 	return g, nil
 }
 
@@ -271,3 +289,4 @@ func (g *Gui) DisableAllTabs() error {
 
 	return nil
 }
+

@@ -3,14 +3,8 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"errors"
 	"fmt"
 	"io"
-	"net"
-	"os/exec"
-	"strings"
-	"sync"
-	"time"
 )
 
 type MopidyProc struct {
@@ -184,77 +178,3 @@ func EchoStream(stream io.Reader, prefix string) {
 	}
 }
 
-func (app *Application) StopMopidy() {
-	app.Disable()
-	err := app.Mopidy.Stop()
-	if err != nil {
-		app.Errors <- err
-	}
-}
-
-func (app *Application) RestartMopidy() {
-	app.Mopidy.Output.Reset()
-
-	if err := app.Mopidy.Stop(); err != nil {
-		app.Disable()
-		app.Errors <- err
-	}
-
-	if err := app.Mopidy.Start(app.Config.Path()); err != nil {
-		app.Disable()
-		app.Errors <- err
-	}
-}
-
-// Mopidy methods
-
-func (m *MopidyProc) Start(configPath string) error {
-	m.Output.Reset()
-	m.Cmd = exec.Command(m.Exec, "--config="+configPath)
-	stderr, err := m.Cmd.StderrPipe()
-	if err != nil {
-		return err
-	}
-	go m.ReadOutput(stderr)
-
-	if err := m.Cmd.Start(); err != nil {
-		return errors.New("failed to start mopidy: " + err.Error())
-	}
-
-	failedAttempts := 0
-	maxAttempts := 10
-
-	// spin until 1) we get an error, 2) we connect successfully, or
-	// 3) we time out with too many attempts
-	for failedAttempts < maxAttempts {
-		select {
-		case <-m.StopConnecting:
-			return nil
-		case <-time.After(500 * time.Millisecond):
-			conn, err := net.Dial("tcp", m.Hostname+":"+m.Port)
-			if err == nil {
-				// connected
-				m.Conn = conn
-				return nil
-			}
-			// TODO: check to see if this error means the port is taken
-			failedAttempts++
-		}
-	}
-
-	return fmt.Errorf("failed to connect to mopidy after %d tries", maxAttempts)
-}
-
-func (m *MopidyProc) Stop() error {
-	if err := m.Cmd.Process.Kill(); err != nil {
-		return err
-	}
-
-	if _, err := m.Cmd.Process.Wait(); err != nil {
-		return err
-	}
-
-	// wait for associated goroutines to finish
-	<-m.Quitting
-	return nil
-}

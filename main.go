@@ -5,8 +5,9 @@ import (
 	"github.com/dradtke/gotk3/gtk"
 	"github.com/dradtke/wetsuit/config"
 	"github.com/dradtke/wetsuit/gui"
+	"github.com/dradtke/wetsuit/server"
+	"github.com/dradtke/wetsuit/server/mopidy"
 	"os"
-	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
@@ -14,9 +15,10 @@ import (
 )
 
 type Application struct {
-	Mopidy *MopidyProc
-	Config *config.Properties
-	Gui    *gui.Gui
+	//Mopidy *MopidyProc
+	Server       *server.Instance
+	ServerConfig *config.Properties
+	Gui          *gui.Gui
 
 	Errors       chan error // channel of errors to be displayed
 	ShowingError bool
@@ -31,25 +33,21 @@ type Application struct {
 func main() {
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
+	gtk.Init(nil)
 
 	app := new(Application)
 	app.Errors = make(chan error)
 	app.Work = make(chan func())
 	app.Running = true
 
-	gtk.Init(nil)
-	var mopidyCmdPath, userConfigPath string
+	srv := mopidy.New()
 
-	// make sure mopidy is installed
-	mopidyCmdPath, err := exec.LookPath("mopidy")
-	if err != nil {
-		app.Fatal(errors.New("Mopidy is not installed."))
-	}
+	var userConfigPath string
 
 	// find the user's configuration
 	usr, err := user.Current()
 	if err == nil {
-		userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", "mopidy.conf")
+		userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", srv.Name()+".conf")
 	} else {
 		// no user =/
 		app.Fatal(err)
@@ -57,26 +55,39 @@ func main() {
 
 	// load configuration
 	if p, err := config.Load(userConfigPath); err == nil {
-		app.Config = p
+		app.ServerConfig = p
 	} else {
 		app.Fatal(err)
 	}
 
 	// create the window
+<<<<<<< HEAD
 	app.Gui, err = gui.Init(app.Config, app.Callbacks())
+=======
+	app.Gui, err = InitGUI(app.ServerConfig)
+>>>>>>> 5029df1033df414601b62c79f1ab3b288998077e
 	if err != nil {
 		app.Fatal(err)
 	}
 
 	app.Gui.MainWindow.ShowAll()
 
+	// in a separate goroutine, attempt to start and connect to it
 	go func() {
-		err := app.InitMopidy(mopidyCmdPath)
+		err := srv.Start(userConfigPath)
 		if err != nil {
 			app.Errors <- err
 		}
-		// attempt to start mopidy
-		app.StartMopidy()
+		hostname, _ := app.ServerConfig.Get("mpd/hostname")
+		port, _ := app.ServerConfig.Get("mpd/port")
+		stop := make(chan bool, 1)
+		ok, err := srv.Connect(hostname, port, stop)
+		if err != nil {
+			app.Errors <- err
+		}
+		if !ok {
+			// how to react to this?
+		}
 	}()
 
 	// custom iterator so that we can watch channels
@@ -98,7 +109,6 @@ func main() {
 			case err := <-app.Errors:
 				app.ShowingError = true
 				app.NonFatal(err)
-				app.Disable()
 			default:
 				// fall through
 			}
