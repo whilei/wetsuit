@@ -70,7 +70,7 @@ func (app *Application) InitMopidy(exec string) (err error) {
 		if r := recover(); r != nil {
 			fmt.Println("Panicking!")
 			fmt.Println(r)
-			Quit(app)
+			app.Quit()
 		}
 	}()
 
@@ -99,9 +99,9 @@ func (app *Application) InitMopidy(exec string) (err error) {
 
 // Disable() updates the application's state and gui when Mopidy isn't running.
 func (app *Application) Disable() {
-	app.Gui.MenuStart.SetSensitive(true)
-	app.Gui.MenuStop.SetSensitive(false)
-	app.Gui.MenuRestart.SetSensitive(false)
+	app.Gui.Menu.Start.SetSensitive(true)
+	app.Gui.Menu.Stop.SetSensitive(false)
+	app.Gui.Menu.Restart.SetSensitive(false)
 	app.Gui.DisableAllTabs()
 	app.SetStatus(MopidyFailed)
 }
@@ -110,16 +110,16 @@ func (app *Application) Disable() {
 // and connected to.
 func (app *Application) Enable() {
 	app.SetStatus(MopidyConnected)
-	app.Gui.MenuStop.SetSensitive(true)
-	app.Gui.MenuRestart.SetSensitive(true)
+	app.Gui.Menu.Stop.SetSensitive(true)
+	app.Gui.Menu.Restart.SetSensitive(true)
 }
 
 func (app *Application) StartMopidy() {
 	app.SetStatus(MopidyConnecting)
 
-	app.Gui.MenuStart.SetSensitive(false)
-	app.Gui.MenuStop.SetSensitive(false)
-	app.Gui.MenuRestart.SetSensitive(false)
+	app.Gui.Menu.Start.SetSensitive(false)
+	app.Gui.Menu.Stop.SetSensitive(false)
+	app.Gui.Menu.Restart.SetSensitive(false)
 
 	err := app.Mopidy.Start(app.Config.Path())
 	if err == nil {

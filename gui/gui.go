@@ -1,28 +1,29 @@
-package main
+package gui
 
 import (
+	"fmt"
 	"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
 	"github.com/dradtke/wetsuit/config"
-
-	"fmt"
-	"os"
 	"reflect"
 )
 
-type GUI struct {
+type Gui struct {
+	// TODO: move all of these to a private struct
 	MainWindow   *gtk.Window    `build:"main-window"`
 	OutputWindow *gtk.Window    `build:"output-window"`
 	Status       *gtk.Statusbar `build:"status"`
 	Notebook     *gtk.Notebook  `build:"notebook"`
 	Output       *gtk.TextView  `build:"output"`
 
-	MenuQuit    *gtk.ImageMenuItem `build:"menu-quit"`
-	MenuSources *gtk.MenuItem      `build:"menu-sources"`
-	MenuOutput  *gtk.MenuItem      `build:"menu-server-output"`
-	MenuStart   *gtk.ImageMenuItem `build:"menu-server-start"`
-	MenuStop    *gtk.ImageMenuItem `build:"menu-server-stop"`
-	MenuRestart *gtk.ImageMenuItem `build:"menu-server-restart"`
+	Menu struct {
+		Quit    *gtk.ImageMenuItem `build:"menu-quit"`
+		Sources *gtk.MenuItem      `build:"menu-sources"`
+		Output  *gtk.MenuItem      `build:"menu-server-output"`
+		Start   *gtk.ImageMenuItem `build:"menu-server-start"`
+		Stop    *gtk.ImageMenuItem `build:"menu-server-stop"`
+		Restart *gtk.ImageMenuItem `build:"menu-server-restart"`
+	} `build:"..."`
 
 	DialogSources struct {
 		Window *gtk.Dialog `build:"dialog-sources"`
@@ -40,14 +41,24 @@ type GUI struct {
 	}
 }
 
+// Represents a caught signal.
+type Event struct {
+	Widget  string
+	Signal  string
+	Context *glib.CallbackContext
+	Return  chan interface{}
+}
+
+type Callback func(ctx *glib.CallbackContext) interface{}
+
 // RunDialog() encapsulates much of the logic for displaying an application dialog.
-// Given the name of the dialog to run, it will check the GUI struct for a
+// Given the name of the dialog to run, it will check the Gui struct for a
 // field of that name. If found, it uses reflection to search for a number of
 // particularly-named fields, in particular looking for "Window" to be the *gtk.Dialog
 // instance as well as a number of common button names. It hooks up the signal handlers
 // for all of them, passing pre-defined response types to the callback provided.
 // If that callback returns false, the dialog is hidden; otherwise it sticks around.
-func (gui *GUI) RunDialog(name string, respond func(gtk.ResponseType) bool) (err error) {
+func (g *Gui) RunDialog(name string, respond func(gtk.ResponseType) bool) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
@@ -59,7 +70,7 @@ func (gui *GUI) RunDialog(name string, respond func(gtk.ResponseType) bool) (err
 		Id     int
 		Object *glib.Object
 	}, 1)
-	structVal := reflect.ValueOf(gui).Elem().FieldByName(name)
+	structVal := reflect.ValueOf(g).Elem().FieldByName(name)
 
 	connect := func(object *glib.Object, signal string, response gtk.ResponseType) {
 		h, err := object.Connect(signal, func() { w.Response(response) })
@@ -109,29 +120,34 @@ func (gui *GUI) RunDialog(name string, respond func(gtk.ResponseType) bool) (err
 	}
 }
 
-func (gui *GUI) SetStatus(icon gtk.Stock, msg string) {
-	gui.statusMessageIcon.SetFromStock(icon, gtk.ICON_SIZE_MENU)
-	gui.statusMessageText.SetText(msg)
+func (g *Gui) SetStatus(icon gtk.Stock, msg string) {
+	g.statusMessageIcon.SetFromStock(icon, gtk.ICON_SIZE_MENU)
+	g.statusMessageText.SetText(msg)
 }
 
 // LoadWidgets() loads widgets into the struct by checking the "build" tag of each field.
 // The special build-tag "..." causes it to be called recursively on that field.
-func LoadWidgets(structVal reflect.Value, builder *gtk.Builder) (err error) {
+func LoadWidgets(structVal reflect.Value, builder *gtk.Builder, callbacks map[string]map[string]Callback) (err error) {
 	defer func() {
 		if r := recover(); r != nil {
-			err = r.(error)
+			var ok bool
+			err, ok = r.(error)
+			if !ok {
+				err = fmt.Errorf("%v", r)
+			}
 		}
 	}()
 
 	// load widgets dynamically by tag
 	for i := 0; i < structVal.NumField(); i++ {
 		field := structVal.Field(i)
-		widget := structVal.Type().Field(i).Tag.Get("build")
+		tag := structVal.Type().Field(i).Tag
+		widget := tag.Get("build")
 		if widget == "" {
 			continue
 		} else if widget == "..." {
 			// recursively load additional structs
-			err := LoadWidgets(field, builder)
+			err := LoadWidgets(field, builder, callbacks)
 			if err != nil {
 				return err
 			}
@@ -141,13 +157,18 @@ func LoadWidgets(structVal reflect.Value, builder *gtk.Builder) (err error) {
 		if err != nil {
 			return err
 		}
+		if signals, ok := callbacks[widget]; ok {
+			for signal, f := range signals {
+				obj.ToObject().Connect(signal, f)
+			}
+		}
 		w := reflect.ValueOf(obj).Convert(field.Type())
 		field.Set(w)
 	}
 	return nil
 }
 
-func InitGUI(cfg *config.Properties) (gui *GUI, err error) {
+func Init(cfg *config.Properties, callbacks map[string]map[string]Callback) (g *Gui, err error) {
 	defer func() {
 		if r := recover(); r != nil {
 			err = r.(error)
@@ -163,62 +184,62 @@ func InitGUI(cfg *config.Properties) (gui *GUI, err error) {
 		return nil, err
 	}
 
-	gui = new(GUI)
+	g = new(Gui)
 
-	err = LoadWidgets(reflect.ValueOf(gui).Elem(), builder)
+	err = LoadWidgets(reflect.ValueOf(g).Elem(), builder, callbacks)
 	if err != nil {
 		return nil, err
 	}
 
 	// set up the status bar
-	area, err := gui.Status.GetMessageArea()
+	area, err := g.Status.GetMessageArea()
 	if err != nil {
 		return nil, err
 	}
-	gui.statusMessageArea = area
+	g.statusMessageArea = area
 	icon, err := gtk.ImageNewFromStock("", gtk.ICON_SIZE_MENU)
 	if err != nil {
 		return nil, err
 	}
-	gui.statusMessageIcon = icon
+	g.statusMessageIcon = icon
 	label, err := gtk.LabelNew("")
 	if err != nil {
 		return nil, err
 	}
-	gui.statusMessageText = label
-	gui.statusMessageArea.PackStart(gui.statusMessageIcon, false, false, 0)
-	gui.statusMessageArea.PackStart(gui.statusMessageText, false, false, 0)
+	g.statusMessageText = label
+	g.statusMessageArea.PackStart(g.statusMessageIcon, false, false, 0)
+	g.statusMessageArea.PackStart(g.statusMessageText, false, false, 0)
 
 	// disable tabs
 	// TODO: default this to enabled if the key isn't found
 	if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
-		gui.DisableTab("local")
+		g.DisableTab("local")
 	}
 	if enabled, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
-		gui.DisableTab("spotify")
+		g.DisableTab("spotify")
 	}
 
-	return gui, nil
+	return g, nil
 }
 
 // Removes the tab whose buildable name is equal to "tab-${name}" and adds its label and page
 // to the gui struct's disabledTabs field, in case we want to re-enable it later.
-func (gui *GUI) DisableTab(name string) error {
+func (g *Gui) DisableTab(name string) error {
 	// tab-${name}
-	for i := 0; i < gui.Notebook.GetNPages(); i++ {
-		page, err := gui.Notebook.GetNthPage(i)
+	for i := 0; i < g.Notebook.GetNPages(); i++ {
+		page, err := g.Notebook.GetNthPage(i)
 		if err != nil {
 			return err
 		}
 
-		label, err := gui.Notebook.GetTabLabel(page)
+		label, err := g.Notebook.GetTabLabel(page)
 		if err != nil {
 			return err
 		}
 
 		if label.GetBuildableName() == "tab-"+name {
-			gui.Notebook.RemovePage(i)
-			gui.disabledTabs = append(gui.disabledTabs, struct {
+			g.Notebook.RemovePage(i)
+			g.disabledTabs = append(g.disabledTabs, struct {
 				Label *gtk.Widget
 				Page  *gtk.Widget
 			}{label, page})
@@ -229,79 +250,24 @@ func (gui *GUI) DisableTab(name string) error {
 	return fmt.Errorf("tab '%s' not found", name)
 }
 
-func (gui *GUI) DisableAllTabs() error {
-	for i := 0; i < gui.Notebook.GetNPages(); i++ {
-		page, err := gui.Notebook.GetNthPage(i)
+func (g *Gui) DisableAllTabs() error {
+	for i := 0; i < g.Notebook.GetNPages(); i++ {
+		page, err := g.Notebook.GetNthPage(i)
 		if err != nil {
 			return err
 		}
 
-		label, err := gui.Notebook.GetTabLabel(page)
+		label, err := g.Notebook.GetTabLabel(page)
 		if err != nil {
 			return err
 		}
 
-		gui.Notebook.RemovePage(i)
-		gui.disabledTabs = append(gui.disabledTabs, struct {
+		g.Notebook.RemovePage(i)
+		g.disabledTabs = append(g.disabledTabs, struct {
 			Label *gtk.Widget
 			Page  *gtk.Widget
 		}{label, page})
 	}
 
 	return nil
-}
-
-func (app *Application) ConnectAll() {
-	app.Gui.MainWindow.Connect("destroy", func() {
-		Quit(app)
-	})
-	app.Gui.MenuQuit.Connect("activate", func() {
-		Quit(app)
-	})
-	app.Gui.MenuSources.Connect("activate", func() {
-		err := app.Gui.RunDialog("DialogSources", func(response gtk.ResponseType) bool {
-			// ???: this seems to get called twice on each response, once passing in
-			// 0, and once passing in the correct signal. What the hell?
-			switch response {
-			case gtk.RESPONSE_CLOSE, gtk.RESPONSE_CANCEL:
-				return false
-			case gtk.RESPONSE_OK:
-				return false
-			default:
-				return true
-			}
-		})
-		if err != nil {
-			// how to handle this failure?
-			fmt.Fprintln(os.Stderr, "failed to run dialog:", err.Error())
-		}
-	})
-	app.Gui.OutputWindow.Connect("delete-event", func() bool {
-		app.Mopidy.NewOutput = func(str string) {}
-		return app.Gui.OutputWindow.HideOnDelete()
-	})
-	app.Gui.MenuOutput.Connect("activate", func() {
-		app.Mopidy.OutputLock.Lock()
-		buffer, err := app.Gui.Output.GetBuffer()
-		if err != nil {
-			app.Errors <- err
-			return
-		}
-		buffer.SetText(app.Mopidy.Output.String())
-		iter := buffer.GetIterAtOffset(-1)
-		app.Mopidy.NewOutput = func(str string) {
-			buffer.Insert(iter, str)
-		}
-		app.Mopidy.OutputLock.Unlock()
-		app.Gui.OutputWindow.ShowAll()
-	})
-	app.Gui.MenuStart.Connect("activate", func() {
-		go app.StartMopidy()
-	})
-	app.Gui.MenuStop.Connect("activate", func() {
-		go app.StopMopidy()
-	})
-	app.Gui.MenuRestart.Connect("activate", func() {
-		go app.RestartMopidy()
-	})
 }

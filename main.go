@@ -1,29 +1,29 @@
 package main
 
 import (
+	"errors"
 	"github.com/dradtke/gotk3/gtk"
 	"github.com/dradtke/wetsuit/config"
-	"sync"
-
-	"errors"
+	"github.com/dradtke/wetsuit/gui"
 	"os"
 	"os/exec"
 	"os/user"
 	"path/filepath"
 	"runtime"
+	"sync"
 )
 
 type Application struct {
 	Mopidy *MopidyProc
 	Config *config.Properties
-	Gui    *GUI
+	Gui    *gui.Gui
 
 	Errors       chan error // channel of errors to be displayed
 	ShowingError bool
 
 	Work chan func() // channel of functions to be run in the main thread
 
-	Running bool
+	Running    bool
 	StatusLock sync.Mutex
 }
 
@@ -63,12 +63,11 @@ func main() {
 	}
 
 	// create the window
-	app.Gui, err = InitGUI(app.Config)
+	app.Gui, err = gui.Init(app.Config, app.Callbacks())
 	if err != nil {
 		app.Fatal(err)
 	}
 
-	app.ConnectAll()
 	app.Gui.MainWindow.ShowAll()
 
 	go func() {
@@ -131,7 +130,7 @@ func (app *Application) NonFatal(err error) {
 	dialog.Show()
 }
 
-// Do() runs a function in the main thread.
+// Do() runs a function in the main thread, waiting until it finishes.
 func (app *Application) Do(f func()) {
 	done := make(chan bool, 1)
 	app.Work <- func() {
@@ -141,6 +140,7 @@ func (app *Application) Do(f func()) {
 	<-done
 }
 
+// SetStatus() updates the Gui's status based on the value of the provided enum.
 func (app *Application) SetStatus(status MopidyStatus) {
 	app.StatusLock.Lock()
 	defer app.StatusLock.Unlock()
@@ -156,10 +156,25 @@ func (app *Application) SetStatus(status MopidyStatus) {
 	}
 }
 
-func Quit(app *Application) {
+// Quit() quits the application.
+func (app *Application) Quit() {
 	if app.Mopidy.Cmd.Process != nil {
 		app.Mopidy.Cmd.Process.Kill()
 	}
 	app.Running = false
 }
 
+// Callbacks() returns a map from widget name and signal to callback function.
+// It's used during Gui initialization to make all the necessary connections.
+func (app *Application) Callbacks() (cb map[string]map[string]gui.Callback) {
+	cb = make(map[string]map[string]gui.Callback)
+	cb["main-window"] = map[string]gui.Callback{"destroy": app.QuitCallback}
+	cb["menu-quit"] = map[string]gui.Callback{"activate": app.QuitCallback}
+	cb["menu-server-output"] = map[string]gui.Callback{"activate": app.OutputWindowCallback}
+	cb["menu-server-start"] = map[string]gui.Callback{"activate": app.StartMopidyCallback}
+	cb["menu-server-stop"] = map[string]gui.Callback{"activate": app.StopMopidyCallback}
+	cb["menu-server-restart"] = map[string]gui.Callback{"activate": app.RestartMopidyCallback}
+	cb["menu-sources"] = map[string]gui.Callback{"activate": app.SourcesCallback}
+	cb["output-window"] = map[string]gui.Callback{"delete-event": app.OutputWindowDeleteCallback}
+	return
+}
