@@ -33,11 +33,13 @@ func (app *Application) SourcesCallback(ctx *glib.CallbackContext) interface{} {
 }
 
 func (app *Application) OutputWindowDeleteCallback(ctx *glib.CallbackContext) interface{} {
-	app.Mopidy.NewOutput = func(str string) {}
-	return app.Gui.OutputWindow.HideOnDelete()
+	// app.Mopidy.NewOutput = func(str string) {}
+	// return app.Gui.OutputWindow.HideOnDelete()
+	return nil
 }
 
 func (app *Application) OutputWindowCallback(ctx *glib.CallbackContext) interface{} {
+	/*
 	app.Mopidy.OutputLock.Lock()
 	buffer, err := app.Gui.Output.GetBuffer()
 	if err != nil {
@@ -51,20 +53,21 @@ func (app *Application) OutputWindowCallback(ctx *glib.CallbackContext) interfac
 	}
 	app.Mopidy.OutputLock.Unlock()
 	app.Gui.OutputWindow.ShowAll()
+	*/
 	return nil
 }
 
 func (app *Application) StartMopidyCallback(ctx *glib.CallbackContext) interface{} {
-	go app.StartMopidy()
+	// go app.StartMopidy()
 	return nil
 }
 
 func (app *Application) StopMopidyCallback(ctx *glib.CallbackContext) interface{} {
-	go app.StopMopidy()
+	// go app.StopMopidy()
 	return nil
 }
 
 func (app *Application) RestartMopidyCallback(ctx *glib.CallbackContext) interface{} {
-	go app.RestartMopidy()
+	// go app.RestartMopidy()
 	return nil
 }

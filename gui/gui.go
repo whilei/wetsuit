@@ -4,43 +4,18 @@ import (
 	"fmt"
 	"github.com/dradtke/gotk3/glib"
 	"github.com/dradtke/gotk3/gtk"
-	"github.com/dradtke/wetsuit/config"
-	"os"
+	"path/filepath"
 	"reflect"
 )
 
 type Gui struct {
-	// TODO: move all of these to a private struct
-	MainWindow   *gtk.Window    `build:"main-window"`
-	OutputWindow *gtk.Window    `build:"output-window"`
-	Status       *gtk.Statusbar `build:"status"`
-	Notebook     *gtk.Notebook  `build:"notebook"`
-	Output       *gtk.TextView  `build:"output"`
+	priv *gui
+	viewModel *gtk.ListStore
+}
 
-	Menu struct {
-		Quit    *gtk.ImageMenuItem `build:"menu-quit"`
-		Sources *gtk.MenuItem      `build:"menu-sources"`
-		Output  *gtk.MenuItem      `build:"menu-server-output"`
-		Start   *gtk.ImageMenuItem `build:"menu-server-start"`
-		Stop    *gtk.ImageMenuItem `build:"menu-server-stop"`
-		Restart *gtk.ImageMenuItem `build:"menu-server-restart"`
-	} `build:"..."`
-
-	DialogSources struct {
-		Window      *gtk.Dialog            `build:"dialog-sources"`
-		Ok          *gtk.Button            `build:"dialog-sources-ok"`
-		Apply       *gtk.Button            `build:"dialog-sources-apply"`
-		Cancel      *gtk.Button            `build:"dialog-sources-cancel"`
-		MusicFolder *gtk.FileChooserButton `build:"dialog-sources-music-folder"`
-	} `build:"..."`
-
-	statusMessageArea *gtk.Box
-	statusMessageIcon *gtk.Image
-	statusMessageText *gtk.Label
-	disabledTabs      []struct {
-		Label *gtk.Widget
-		Page  *gtk.Widget
-	}
+type gui struct {
+	Window *gtk.Window `build:"main-window"`
+	View *gtk.TreeView `build:"view"`
 }
 
 // Represents a caught signal.
@@ -123,8 +98,7 @@ func (g *Gui) RunDialog(name string, respond func(gtk.ResponseType) bool) (err e
 }
 
 func (g *Gui) SetStatus(icon gtk.Stock, msg string) {
-	g.statusMessageIcon.SetFromStock(icon, gtk.ICON_SIZE_MENU)
-	g.statusMessageText.SetText(msg)
+	panic("not implemented")
 }
 
 // LoadWidgets() loads widgets into the struct by checking the "build" tag of each field.
@@ -170,123 +144,97 @@ func LoadWidgets(structVal reflect.Value, builder *gtk.Builder, callbacks map[st
 	return nil
 }
 
-func Init(cfg *config.Properties, callbacks map[string]map[string]Callback) (g *Gui, err error) {
-	defer func() {
-		if r := recover(); r != nil {
-			err = r.(error)
+// loadUI() loads all the .ui files for the passed in builder.
+func loadUI(builder *gtk.Builder) error {
+	matches, err := filepath.Glob("src/github.com/dradtke/wetsuit/ui/*.ui")
+	if err != nil {
+		return err
+	}
+	for _, f := range matches {
+		err := builder.AddFromFile(f)
+		if err != nil {
+			return err
 		}
-	}()
+	}
+	return nil
+}
 
+func Init(callbacks map[string]map[string]Callback) (g *Gui, err error) {
 	builder, err := gtk.BuilderNew()
 	if err != nil {
 		return nil, err
 	}
 
-	if err := builder.AddFromFile("src/github.com/dradtke/wetsuit/wetsuit.ui"); err != nil {
+	if err := loadUI(builder); err != nil {
 		return nil, err
 	}
 
 	g = new(Gui)
+	g.priv = new(gui)
 
-	err = LoadWidgets(reflect.ValueOf(g).Elem(), builder, callbacks)
+	err = LoadWidgets(reflect.ValueOf(g.priv).Elem(), builder, callbacks)
+	if err != nil {
+		return nil, err
+	}
+
+	err = g.initViewModel()
 	if err != nil {
 		return nil, err
 	}
 
 	// set up the status bar
-	area, err := g.Status.GetMessageArea()
+	/*
+	area, err := g.priv.Status.GetMessageArea()
 	if err != nil {
 		return nil, err
 	}
-	g.statusMessageArea = area
+	g.priv.StatusMessageArea = area
 	icon, err := gtk.ImageNewFromStock("", gtk.ICON_SIZE_MENU)
 	if err != nil {
 		return nil, err
 	}
-	g.statusMessageIcon = icon
+	g.priv.StatusMessageIcon = icon
 	label, err := gtk.LabelNew("")
 	if err != nil {
 		return nil, err
 	}
-	g.statusMessageText = label
-	g.statusMessageArea.PackStart(g.statusMessageIcon, false, false, 0)
-	g.statusMessageArea.PackStart(g.statusMessageText, false, false, 0)
+	g.priv.StatusMessageText = label
+	g.priv.StatusMessageArea.PackStart(g.priv.StatusMessageIcon, false, false, 0)
+	g.priv.StatusMessageArea.PackStart(g.priv.StatusMessageText, false, false, 0)
+	*/
 
 	// TODO: see if we can somehow set the music folder button to the existing music folder
+	/*
 	mediaDir, err := cfg.Get("local/media_dir")
 	if err != nil {
 		if mediaDir == "$XDG_MUSIC_DIR" {
 			mediaDir = os.ExpandEnv(mediaDir)
 		}
 		if mediaDir != "" {
-			g.DialogSources.MusicFolder.SetCurrentFolder(mediaDir)
+			g.priv.DialogSources.MusicFolder.SetCurrentFolder(mediaDir)
 		} else {
 			cfg.SetBool("local/enabled", false)
 		}
 	} else {
 		cfg.SetBool("local/enabled", false)
 	}
+	*/
 
 	// disable tabs
 	// TODO: default this to enabled if the key isn't found
+	/*
 	if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
 		g.DisableTab("local")
 	}
 	if enabled, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
 		g.DisableTab("spotify")
 	}
+	*/
 
 	// TODO: if everything is disabled, point users to the Sources... dialog
 	return g, nil
 }
 
-// Removes the tab whose buildable name is equal to "tab-${name}" and adds its label and page
-// to the gui struct's disabledTabs field, in case we want to re-enable it later.
-func (g *Gui) DisableTab(name string) error {
-	// tab-${name}
-	for i := 0; i < g.Notebook.GetNPages(); i++ {
-		page, err := g.Notebook.GetNthPage(i)
-		if err != nil {
-			return err
-		}
-
-		label, err := g.Notebook.GetTabLabel(page)
-		if err != nil {
-			return err
-		}
-
-		if label.GetBuildableName() == "tab-"+name {
-			g.Notebook.RemovePage(i)
-			g.disabledTabs = append(g.disabledTabs, struct {
-				Label *gtk.Widget
-				Page  *gtk.Widget
-			}{label, page})
-			return nil
-		}
-	}
-
-	return fmt.Errorf("tab '%s' not found", name)
+func (g *Gui) Show() {
+	g.priv.Window.ShowAll()
 }
-
-func (g *Gui) DisableAllTabs() error {
-	for i := 0; i < g.Notebook.GetNPages(); i++ {
-		page, err := g.Notebook.GetNthPage(i)
-		if err != nil {
-			return err
-		}
-
-		label, err := g.Notebook.GetTabLabel(page)
-		if err != nil {
-			return err
-		}
-
-		g.Notebook.RemovePage(i)
-		g.disabledTabs = append(g.disabledTabs, struct {
-			Label *gtk.Widget
-			Page  *gtk.Widget
-		}{label, page})
-	}
-
-	return nil
-}
-

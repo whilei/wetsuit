@@ -1,24 +1,19 @@
 package main
 
 import (
-	"errors"
+	"github.com/dradtke/go-freedesktop/freedesktop"
+	"github.com/dradtke/go-mpd/mpd"
 	"github.com/dradtke/gotk3/gtk"
-	"github.com/dradtke/wetsuit/config"
 	"github.com/dradtke/wetsuit/gui"
-	"github.com/dradtke/wetsuit/server"
-	"github.com/dradtke/wetsuit/server/mopidy"
 	"os"
-	"os/user"
-	"path/filepath"
 	"runtime"
 	"sync"
 )
 
 type Application struct {
-	//Mopidy *MopidyProc
-	Server       *server.Instance
-	ServerConfig *config.Properties
-	Gui          *gui.Gui
+	Conn *mpd.Conn
+	//ServerConfig *config.Properties
+	Gui *gui.Gui
 
 	Errors       chan error // channel of errors to be displayed
 	ShowingError bool
@@ -40,55 +35,48 @@ func main() {
 	app.Work = make(chan func())
 	app.Running = true
 
-	srv := mopidy.New()
-
-	var userConfigPath string
-
-	// find the user's configuration
-	usr, err := user.Current()
+	// TODO: take address as a parameter
+	conn, err := mpd.Connect("[::]:6600")
 	if err == nil {
-		userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", srv.Name()+".conf")
-	} else {
-		// no user =/
-		app.Fatal(err)
-	}
-
-	// load configuration
-	if p, err := config.Load(userConfigPath); err == nil {
-		app.ServerConfig = p
+		app.Conn = conn
 	} else {
 		app.Fatal(err)
 	}
 
-	// create the window
-<<<<<<< HEAD
-	app.Gui, err = gui.Init(app.Config, app.Callbacks())
-=======
-	app.Gui, err = InitGUI(app.ServerConfig)
->>>>>>> 5029df1033df414601b62c79f1ab3b288998077e
+	/*
+		var userConfigPath string
+
+		// find the user's configuration
+		usr, err := user.Current()
+		if err == nil {
+			userConfigPath = filepath.Join(usr.HomeDir, ".config", "wetsuit", srv.Name()+".conf")
+		} else {
+			// no user =/
+			app.Fatal(err)
+		}
+
+		// load configuration
+		if p, err := config.Load(userConfigPath); err == nil {
+			app.ServerConfig = p
+		} else {
+			app.Fatal(err)
+		}
+	*/
+	musicDir, err := freedesktop.GetUserDir("music")
 	if err != nil {
 		app.Fatal(err)
 	}
 
-	app.Gui.MainWindow.ShowAll()
+	// create the window
+	app.Gui, err = gui.Init(app.Callbacks())
+	if err != nil {
+		app.Fatal(err)
+	}
 
-	// in a separate goroutine, attempt to start and connect to it
-	go func() {
-		err := srv.Start(userConfigPath)
-		if err != nil {
-			app.Errors <- err
-		}
-		hostname, _ := app.ServerConfig.Get("mpd/hostname")
-		port, _ := app.ServerConfig.Get("mpd/port")
-		stop := make(chan bool, 1)
-		ok, err := srv.Connect(hostname, port, stop)
-		if err != nil {
-			app.Errors <- err
-		}
-		if !ok {
-			// how to react to this?
-		}
-	}()
+	app.Gui.Show()
+
+	// load music
+	go app.Scan(musicDir)
 
 	// custom iterator so that we can watch channels
 	for app.Running {
@@ -150,27 +138,13 @@ func (app *Application) Do(f func()) {
 	<-done
 }
 
-// SetStatus() updates the Gui's status based on the value of the provided enum.
-func (app *Application) SetStatus(status MopidyStatus) {
-	app.StatusLock.Lock()
-	defer app.StatusLock.Unlock()
-
-	app.Mopidy.Status = status
-	switch status {
-	case MopidyConnecting:
-		app.Gui.SetStatus("", "Connecting...")
-	case MopidyConnected:
-		app.Gui.SetStatus(gtk.STOCK_CONNECT, "Connected to Mopidy.")
-	case MopidyFailed:
-		app.Gui.SetStatus("", "Not connected.")
-	}
-}
-
 // Quit() quits the application.
 func (app *Application) Quit() {
-	if app.Mopidy.Cmd.Process != nil {
-		app.Mopidy.Cmd.Process.Kill()
-	}
+	/*
+		if app.Mopidy.Cmd.Process != nil {
+			app.Mopidy.Cmd.Process.Kill()
+		}
+	*/
 	app.Running = false
 }
 
