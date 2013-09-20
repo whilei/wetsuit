@@ -9,13 +9,14 @@ import (
 )
 
 type Gui struct {
-	priv *gui
+	priv      *gui
 	viewModel *gtk.ListStore
 }
 
 type gui struct {
-	Window *gtk.Window `build:"main-window"`
-	View *gtk.TreeView `build:"view"`
+	Window     *gtk.Window   `build:"main-window"`
+	Collection *gtk.TreeView `build:"view-collection"`
+	Queue      *gtk.TreeView `build:"view-queue"`
 }
 
 // Represents a caught signal.
@@ -184,51 +185,51 @@ func Init(callbacks map[string]map[string]Callback) (g *Gui, err error) {
 
 	// set up the status bar
 	/*
-	area, err := g.priv.Status.GetMessageArea()
-	if err != nil {
-		return nil, err
-	}
-	g.priv.StatusMessageArea = area
-	icon, err := gtk.ImageNewFromStock("", gtk.ICON_SIZE_MENU)
-	if err != nil {
-		return nil, err
-	}
-	g.priv.StatusMessageIcon = icon
-	label, err := gtk.LabelNew("")
-	if err != nil {
-		return nil, err
-	}
-	g.priv.StatusMessageText = label
-	g.priv.StatusMessageArea.PackStart(g.priv.StatusMessageIcon, false, false, 0)
-	g.priv.StatusMessageArea.PackStart(g.priv.StatusMessageText, false, false, 0)
+		area, err := g.priv.Status.GetMessageArea()
+		if err != nil {
+			return nil, err
+		}
+		g.priv.StatusMessageArea = area
+		icon, err := gtk.ImageNewFromStock("", gtk.ICON_SIZE_MENU)
+		if err != nil {
+			return nil, err
+		}
+		g.priv.StatusMessageIcon = icon
+		label, err := gtk.LabelNew("")
+		if err != nil {
+			return nil, err
+		}
+		g.priv.StatusMessageText = label
+		g.priv.StatusMessageArea.PackStart(g.priv.StatusMessageIcon, false, false, 0)
+		g.priv.StatusMessageArea.PackStart(g.priv.StatusMessageText, false, false, 0)
 	*/
 
 	// TODO: see if we can somehow set the music folder button to the existing music folder
 	/*
-	mediaDir, err := cfg.Get("local/media_dir")
-	if err != nil {
-		if mediaDir == "$XDG_MUSIC_DIR" {
-			mediaDir = os.ExpandEnv(mediaDir)
-		}
-		if mediaDir != "" {
-			g.priv.DialogSources.MusicFolder.SetCurrentFolder(mediaDir)
+		mediaDir, err := cfg.Get("local/media_dir")
+		if err != nil {
+			if mediaDir == "$XDG_MUSIC_DIR" {
+				mediaDir = os.ExpandEnv(mediaDir)
+			}
+			if mediaDir != "" {
+				g.priv.DialogSources.MusicFolder.SetCurrentFolder(mediaDir)
+			} else {
+				cfg.SetBool("local/enabled", false)
+			}
 		} else {
 			cfg.SetBool("local/enabled", false)
 		}
-	} else {
-		cfg.SetBool("local/enabled", false)
-	}
 	*/
 
 	// disable tabs
 	// TODO: default this to enabled if the key isn't found
 	/*
-	if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
-		g.DisableTab("local")
-	}
-	if enabled, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
-		g.DisableTab("spotify")
-	}
+		if enabled, err := cfg.GetBool("local/enabled"); !enabled || err != nil {
+			g.DisableTab("local")
+		}
+		if enabled, err := cfg.GetBool("spotify/enabled"); !enabled || err != nil {
+			g.DisableTab("spotify")
+		}
 	*/
 
 	// TODO: if everything is disabled, point users to the Sources... dialog
