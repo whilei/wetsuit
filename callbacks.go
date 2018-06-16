@@ -40,19 +40,19 @@ func (app *Application) OutputWindowDeleteCallback(ctx *glib.CallbackContext) in
 
 func (app *Application) OutputWindowCallback(ctx *glib.CallbackContext) interface{} {
 	/*
-	app.Mopidy.OutputLock.Lock()
-	buffer, err := app.Gui.Output.GetBuffer()
-	if err != nil {
-		app.Errors <- err
-		return nil
-	}
-	buffer.SetText(app.Mopidy.Output.String())
-	iter := buffer.GetIterAtOffset(-1)
-	app.Mopidy.NewOutput = func(str string) {
-		buffer.Insert(iter, str)
-	}
-	app.Mopidy.OutputLock.Unlock()
-	app.Gui.OutputWindow.ShowAll()
+		app.Mopidy.OutputLock.Lock()
+		buffer, err := app.Gui.Output.GetBuffer()
+		if err != nil {
+			app.Errors <- err
+			return nil
+		}
+		buffer.SetText(app.Mopidy.Output.String())
+		iter := buffer.GetIterAtOffset(-1)
+		app.Mopidy.NewOutput = func(str string) {
+			buffer.Insert(iter, str)
+		}
+		app.Mopidy.OutputLock.Unlock()
+		app.Gui.OutputWindow.ShowAll()
 	*/
 	return nil
 }

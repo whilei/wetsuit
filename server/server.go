@@ -15,6 +15,7 @@ type Instance interface {
 }
 
 type Status int
+
 const (
 	Connecting Status = iota
 	Connected

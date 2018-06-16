@@ -9,7 +9,7 @@ import (
 )
 
 type Properties struct {
-	data map[string] interface{}
+	data map[string]interface{}
 	path string
 }
 
@@ -23,11 +23,11 @@ func (p *Properties) Path() string {
 func (p *Properties) Get(key string) (string, error) {
 	val, ok := p.data[key]
 	if !ok {
-		return "", &NotFoundError{key:key}
+		return "", &NotFoundError{key: key}
 	}
 	str, ok := val.(string)
 	if !ok {
-		return "", &InvalidTypeError{typ:"string"}
+		return "", &InvalidTypeError{typ: "string"}
 	}
 	return str, nil
 }
@@ -41,11 +41,11 @@ func (p *Properties) Set(key, value string) {
 func (p *Properties) GetBool(key string) (bool, error) {
 	val, ok := p.data[key]
 	if !ok {
-		return false, &NotFoundError{key:key}
+		return false, &NotFoundError{key: key}
 	}
 	b, ok := val.(bool)
 	if !ok {
-		return false, &InvalidTypeError{typ:"bool"}
+		return false, &InvalidTypeError{typ: "bool"}
 	}
 	return b, nil
 }
@@ -58,7 +58,7 @@ func (p *Properties) SetBool(key string, value bool) {
 // Load() takes a config file path and loads it into a new Properties struct.
 func Load(path string) (*Properties, error) {
 	p := new(Properties)
-	p.data = make(map[string] interface{})
+	p.data = make(map[string]interface{})
 	p.path = path
 
 	if _, err := os.Stat(path); os.IsNotExist(err) {
@@ -91,7 +91,7 @@ func Load(path string) (*Properties, error) {
 
 		// check for the start of a section
 		if strings.HasPrefix(line, "[") && strings.HasSuffix(line, "]") {
-			section = line[1:len(line)-1]
+			section = line[1 : len(line)-1]
 			continue
 		}
 
